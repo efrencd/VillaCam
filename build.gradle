@@ -1,0 +1,9 @@
+// RootEncoder's transitive dependencies include Kotlin 2.3 metadata.
+// Use a compatible D8/R8 while keeping the installed Gradle/AGP toolchain.
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies { classpath 'com.android.tools:r8:8.13.19' }
+}
+plugins {
+    id 'com.android.application' version '8.6.1' apply false
+}

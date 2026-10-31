@@ -1,0 +1,13 @@
+VillaCam
+Copyright 2026 Efren C.D.
+
+Created for Villavision, the school television project at Villaverde.
+Licensed under the Apache License, Version 2.0.
+
+VillaCam uses RootEncoder by Pedro Sánchez (pedroSG94), distributed under
+the Apache License, Version 2.0, and other independently licensed components.
+See THIRD_PARTY_NOTICES.md for third-party references.
+
+The optional VDO.Ninja mode embeds its official hosted web client.
+VillaCam is an independent project and is not endorsed by VDO.Ninja,
+OBS Studio, RootEncoder, or the Apache Software Foundation.
