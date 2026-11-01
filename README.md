@@ -8,7 +8,7 @@ Created by **Efren C.D.** for Villavision, the school television project at Vill
 
 VillaCam turns an Android phone into a wireless camera for OBS Studio. **SRT is the default**; an optional mode embeds the official **VDO.Ninja / WebRTC** publisher.
 
-Current version: **0.13.0**. The native interface automatically uses **Spanish when the primary device language is Spanish**, and **English for every other language**. Regional Spanish variants are supported; a secondary Spanish language does not override an unsupported primary language. An explicit Android 13+ per-app locale override follows the same rule. Project documentation is English. The embedded VDO.Ninja website manages its own language independently. This is an experimental project: test the phones, accessories and network you will use for an event.
+Current version: **0.18.0**. The native interface automatically uses **Spanish when the primary device language is Spanish**, and **English for every other language**. Regional Spanish variants are supported; a secondary Spanish language does not override an unsupported primary language. An explicit Android 13+ per-app locale override follows the same rule. Project documentation is English. The embedded VDO.Ninja website manages its own language independently. This is an experimental project: test the phones, accessories and network you will use for an event.
 
 Download test builds from [GitHub Releases](https://github.com/efrencd/VillaCam/releases). Preview APKs use development signing; a future release signing key may require reinstalling the app, which clears its local settings.
 
@@ -17,13 +17,36 @@ Download test builds from [GitHub Releases](https://github.com/efrencd/VillaCam/
 - Landscape 16:9 video: **720p or 1080p at 30 fps**, H.264.
 - SRT audio: **AAC stereo, 48 kHz, 128 kb/s**.
 - Automatic reconnection and adaptive video bitrate.
+- Native phone stabilization: off, electronic (EIS) or optical (OIS), with camera metadata confirmation.
 - SRT latency: **60, 120, 200, 400 or 800 ms**.
 - Live selection of automatic, built-in or USB microphone input, with actual-route reporting.
 - Camera switching and mute controls over the local preview.
-- Fixed start/stop and connection status with a blinking green live indicator.
+- Circular start/stop control over the bottom-center preview; white shutter when idle, red stop square while publishing or reconnecting.
+- Three icon tabs aligned to the preview top: options, web panel and about.
+- Connection status over the upper-left preview, with a blinking green SRT live indicator.
+- Vertical SRT microphone peak meter over the right edge of the preview (dBFS, colored bands and peak hold).
+- Configurable receive-only web panel that stays loaded across tabs, with independent web audio muting where supported.
 - Embedded VDO.Ninja mode with a private camera ID and an OBS receiving link.
 
 Preview controls are not transmitted. No local video files are recorded. Leaving the publishing screen or turning off the screen stops capture and recovery. Background publishing is not supported.
+
+## Native stabilization (SRT)
+
+In Options, choose **Off**, **Electronic (EIS)** or **Optical (OIS)**. Off is the default. Stop streaming to change the setting. The preference is saved and reapplied when reopening/reconnecting the camera or switching lenses. Only one stabilization mode is requested at a time. Unsupported selections explicitly report that the camera does not support the mode and request both modes off.
+
+The status below the selector reports capture metadata, rather than treating an accepted request as proof of active stabilization. Support and results depend on the camera and video profile; EIS may crop the image or increase delay. Test 720p and 1080p on the actual phone. VDO.Ninja capture is independent of this native setting.
+
+## Sidebar and director panel
+
+The three icon tabs open **Options** (gear), **Web panel** (globe) and **About** (information). Long-press a tab for its label. The SRT shutter button stays over the bottom-center preview, outside the transmitted image. The right panel spans the preview height. In VDO.Ninja mode, Options contains the open/close publisher button; actual WebRTC transmission still uses the website controls.
+
+In Options, enter the full panel URL and tap **Save and open panel**. Both HTTPS and HTTP are accepted, including local LAN dashboards. HTTPS is normally required for receiving WebRTC audio; plain HTTP can be useful for a local text chat. Navigation stays on the configured origin. Reload and close controls live in Options and affect only this panel, not SRT capture. The loaded page uses the full web tab without a permanent toolbar or status banner. A URL is saved locally; do not put passwords or secrets into it.
+
+The panel cannot access the camera or microphone. Web audio is **off by default** when Android System WebView supports independent muting; enable it in Options for director-to-phone audio. A tap inside the page may be required to start playback. Older WebViews without native audio-muting support show a disabled switch and a notice: use Android volume or update System WebView. Headphones are **optional**, and unplugging them never closes the page. **Android selects the playback output**; VillaCam does not force a separate headphone route or change the streaming microphone to route web audio. Select/check the output in the phone settings. With audio enabled, unplugging headphones may move playback to the speaker.
+
+Tabs retain the live web session while the activity stays foregrounded. Leaving the screen closes the panel and capture; the configured URL remains saved. Switching between SRT and the separate VDO.Ninja screen also recreates the panel session.
+
+The native microphone meter reads the existing SRT PCM16 capture without modifying samples or opening another recorder. It starts while SRT captures audio, shows mute explicitly and clears on stop/reconnect. The slim, transparent meter uses a peak **dBFS** scale without numeric labels; it is not a calibrated loudness measurement. Native metering is unavailable for VDO.Ninja, whose capture belongs to its own web client. Preview overlays are never encoded into SRT.
 
 ## Requirements
 

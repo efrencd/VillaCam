@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $outputDirectory = Join-Path $projectRoot 'app/build/policy-tests'
 New-Item -ItemType Directory -Force $outputDirectory | Out-Null
-$policies = @('RecoveryMonitor', 'AdaptiveBitrate', 'AudioInputPolicy', 'VdoLinks', 'UiLanguage')
+$policies = @('RecoveryMonitor', 'AdaptiveBitrate', 'AudioInputPolicy', 'VdoLinks', 'UiLanguage', 'PcmLevel', 'PanelLinks')
 $sources = foreach ($policy in $policies) {
     Join-Path $projectRoot "app/src/main/java/es/colegio/camara/$policy.java"
     Join-Path $projectRoot "tests/es/colegio/camara/${policy}Test.java"

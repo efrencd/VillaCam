@@ -20,6 +20,7 @@ import java.util.UUID;
 /** Hosts the official client. WebRTC state and capture controls belong to VDO.Ninja. */
 public class VdoActivity extends LocalizedActivity {
     private FrameLayout webArea;
+    private SidebarPanel sidebarPanel;
     private WebView web;
     private EditText identifier, password;
     private TextView status, receiverLink;
@@ -39,19 +40,25 @@ public class VdoActivity extends LocalizedActivity {
                 insets.getSystemWindowInsetRight(), insets.getSystemWindowInsetBottom());
             return insets;
         });
+        FrameLayout stage = new FrameLayout(this);
         webArea = new FrameLayout(this);
-        root.addView(webArea, new LinearLayout.LayoutParams(0, -1, 1));
+        stage.addView(webArea, new FrameLayout.LayoutParams(-1, -1));
+        root.addView(stage, new LinearLayout.LayoutParams(0, -1, 1));
         placeholder();
         LinearLayout sidebar = new LinearLayout(this);
         sidebar.setOrientation(LinearLayout.VERTICAL);
-        sidebar.setPadding(dp(12), dp(8), dp(12), dp(8));
+        sidebar.setPadding(dp(12), 0, dp(12), 0);
         root.addView(sidebar, new LinearLayout.LayoutParams(dp(290), -1));
-        button(sidebar, getString(R.string.back_to_srt), view -> finish());
         ScrollView scroll = new ScrollView(this);
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         scroll.addView(panel);
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        button(panel, getString(R.string.back_to_srt), view -> finish());
+        open = button(panel, getString(R.string.open_publisher), view -> { if (web == null) openPublisher(); else closePublisher(); });
+        open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(21, 128, 61)));
+        open.setTextColor(Color.WHITE);
+
         label(panel, getString(R.string.vdo_mode));
         label(panel, getString(R.string.private_camera_id));
         identifier = new EditText(this);
@@ -68,16 +75,25 @@ public class VdoActivity extends LocalizedActivity {
         password.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         password.setContentDescription(getString(R.string.vdo_password));
         panel.addView(password);
-        open = button(panel, getString(R.string.open_publisher), view -> { if (web == null) openPublisher(); else closePublisher(); });
-        open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(21, 128, 61)));
-        open.setTextColor(Color.WHITE);
         button(panel, getString(R.string.copy_obs_link), view -> copyReceiver());
         receiverLink = label(panel, "");
         receiverLink.setTextIsSelectable(true);
-        status = label(panel, getString(R.string.configure_publisher));
+        status = new TextView(this);
+        status.setText(R.string.configure_publisher);
+        status.setTextSize(12);
+        status.setMaxWidth(dp(360));
+        status.setMaxLines(3);
+        status.setPadding(dp(10), dp(8), dp(10), dp(8));
+        android.graphics.drawable.GradientDrawable statusBackground = new android.graphics.drawable.GradientDrawable();
+        statusBackground.setColor(0x99111827); statusBackground.setCornerRadius(dp(8));
+        status.setBackground(statusBackground);
+        FrameLayout.LayoutParams statusPosition = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.LEFT);
+        statusPosition.setMargins(dp(12), dp(12), dp(12), dp(12));
+        stage.addView(status, statusPosition);
         label(panel, getString(R.string.vdo_help));
         TextView terms = label(panel, getString(R.string.vdo_terms));
         android.text.util.Linkify.addLinks(terms, android.text.util.Linkify.WEB_URLS);
+        sidebarPanel = new SidebarPanel(this, sidebar, scroll, panel);
         setContentView(root);
     }
     private int dp(int value) { return Math.round(value * getResources().getDisplayMetrics().density); }
@@ -206,8 +222,8 @@ public class VdoActivity extends LocalizedActivity {
         open.setBackgroundTintList(ColorStateList.valueOf(Color.rgb(21, 128, 61)));
         status.setText(getString(R.string.publisher_closed));
     }
-    @Override protected void onResume() { super.onResume(); resumed = true; }
-    @Override protected void onPause() { resumed = false; closePublisher(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); resumed = true; sidebarPanel.resume(); }
+    @Override protected void onPause() { resumed = false; sidebarPanel.pause(); closePublisher(); super.onPause(); }
     @Override protected void onDestroy() { closePublisher(); super.onDestroy(); }
     @Override public void onRequestPermissionsResult(int code, String[] names, int[] results) {
         super.onRequestPermissionsResult(code, names, results);

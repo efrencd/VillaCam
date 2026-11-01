@@ -29,12 +29,15 @@ import java.net.URI;
 /** Foreground-only camera: leaving the screen always releases camera and microphone. */
 public class MainActivity extends LocalizedActivity implements SurfaceHolder.Callback {
     private SrtCamera2 camera;
+    private SidebarPanel sidebarPanel;
+    private MicrophoneMeter meter;
     private EditText host, port;
     private TextView status;
     private View liveDot;
-    private Button transmit;
+    private StreamButton transmit;
     private ImageButton mute;
-    private Spinner resolution, latency;
+    private Spinner resolution, latency, stabilization;
+    private PhoneStabilization phoneStabilization;
     private TextView receiverHelp;
     private AudioInputRouter audioRouter;
     private Spinner audioInput;
@@ -42,7 +45,7 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
     private static final int[] LATENCIES = {60, 120, 200, 400, 800};
     private CameraHelper.Facing facing = CameraHelper.Facing.BACK;
     private boolean surfaceReady, resumed, active, muted;
-    private int generation;
+    private volatile int generation;
     private final Handler recoveryHandler = new Handler(Looper.getMainLooper());
     private final RecoveryMonitor recovery = new RecoveryMonitor();
     private String streamUrl;
@@ -92,14 +95,21 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         videoArea.addView(videoControls, overlay);
         LinearLayout sidebar = new LinearLayout(this);
         sidebar.setOrientation(LinearLayout.VERTICAL);
-        sidebar.setPadding(dp(12), dp(8), dp(12), dp(8));
+        sidebar.setPadding(dp(12), 0, dp(12), 0);
         root.addView(sidebar, new LinearLayout.LayoutParams(dp(290), -1));
-        transmit = button(sidebar, getString(R.string.start_stream), v -> toggle());
-        transmit.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+        transmit = new StreamButton(this);
+        transmit.setOnClickListener(view -> toggle());
+        FrameLayout.LayoutParams transmitPosition = new FrameLayout.LayoutParams(dp(72), dp(72), Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL);
+        transmitPosition.bottomMargin = dp(12);
+        videoArea.addView(transmit, transmitPosition);
         LinearLayout statusRow = new LinearLayout(this);
         statusRow.setOrientation(LinearLayout.HORIZONTAL);
         statusRow.setGravity(Gravity.CENTER_VERTICAL);
-        statusRow.setPadding(dp(4), dp(8), dp(4), dp(8));
+        statusRow.setPadding(dp(10), dp(8), dp(10), dp(8));
+        GradientDrawable statusBackground = new GradientDrawable();
+        statusBackground.setColor(0x99111827);
+        statusBackground.setCornerRadius(dp(8));
+        statusRow.setBackground(statusBackground);
         liveDot = new View(this);
         GradientDrawable dot = new GradientDrawable();
         dot.setShape(GradientDrawable.OVAL);
@@ -113,8 +123,20 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         status = new TextView(this);
         status.setText(getString(R.string.grant_capture));
         statusRow.addView(status, new LinearLayout.LayoutParams(0, -2, 1));
-        sidebar.addView(statusRow, new LinearLayout.LayoutParams(-1, -2));
-        Spinner mode = selector(sidebar, getString(R.string.streaming_mode), new String[]{getString(R.string.srt_default), getString(R.string.vdo_mode)}, 0);
+        FrameLayout.LayoutParams statusPosition = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.LEFT);
+        statusPosition.setMargins(dp(12), dp(12), dp(70), dp(12));
+        videoArea.addView(statusRow, statusPosition);
+        meter = new MicrophoneMeter(this);
+        FrameLayout.LayoutParams meterPosition = new FrameLayout.LayoutParams(dp(14), dp(180), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
+        meterPosition.rightMargin = dp(8);
+        videoArea.addView(meter, meterPosition);
+        ScrollView scroll = new ScrollView(this);
+        LinearLayout panel = new LinearLayout(this);
+        panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setPadding(0, dp(8), 0, dp(8));
+        scroll.addView(panel);
+        sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        Spinner mode = selector(panel, getString(R.string.streaming_mode), new String[]{getString(R.string.srt_default), getString(R.string.vdo_mode)}, 0);
         mode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 if (position == 1) {
@@ -125,17 +147,29 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
             }
             public void onNothingSelected(AdapterView<?> parent) { }
         });
-        ScrollView scroll = new ScrollView(this);
-        LinearLayout panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(0, dp(8), 0, dp(8));
-        scroll.addView(panel);
-        sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         host = field(panel, getString(R.string.receiver_host), "host", "192.168.1.100");
         port = field(panel, getString(R.string.udp_port), "port", "9000");
         port.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         resolution = selector(panel, getString(R.string.resolution), new String[]{getString(R.string.resolution_720), getString(R.string.resolution_1080)},
             getPreferences(0).getInt("resolution", 0));
+        stabilization = selector(panel, getString(R.string.stabilization_label),
+            new String[]{getString(R.string.stabilization_off), getString(R.string.stabilization_eis), getString(R.string.stabilization_ois)},
+            getPreferences(0).getInt("stabilization", 0));
+        TextView stabilizationStatus = new TextView(this);
+        stabilizationStatus.setTextSize(12);
+        panel.addView(stabilizationStatus);
+        phoneStabilization = new PhoneStabilization(stabilizationStatus);
+        TextView stabilizationHelp = new TextView(this);
+        stabilizationHelp.setText(R.string.stabilization_help);
+        stabilizationHelp.setTextSize(12);
+        panel.addView(stabilizationHelp);
+        stabilization.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                getPreferences(0).edit().putInt("stabilization", position).apply();
+                if (camera != null && !active) phoneStabilization.attach(camera, position);
+            }
+            public void onNothingSelected(AdapterView<?> parent) { }
+        });
         latency = selector(panel, getString(R.string.srt_latency), new String[]{getString(R.string.latency_60), getString(R.string.latency_120), getString(R.string.latency_200), getString(R.string.latency_400), getString(R.string.latency_800)},
             getPreferences(0).getInt("latency", 1));
         audioInput = selector(panel, getString(R.string.audio_input_label),
@@ -155,7 +189,8 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         });
         iconButton(videoControls, R.drawable.ic_switch_camera, getString(R.string.switch_camera), v -> {
             if (camera != null && camera.isOnPreview()) {
-                try { camera.switchCamera(); facing = camera.getCameraFacing(); }
+                try { camera.switchCamera(); facing = camera.getCameraFacing();
+                    phoneStabilization.attach(camera, stabilization.getSelectedItemPosition()); }
                 catch (Exception e) { message(getString(R.string.switch_camera_error)); }
             }
         });
@@ -166,6 +201,7 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         });
         controls();
         receiverHelp = new TextView(this);
+        sidebarPanel = new SidebarPanel(this, sidebar, scroll, panel);
         panel.addView(receiverHelp);
         updateReceiverHelp();
         setContentView(root);
@@ -281,6 +317,7 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         mute.setImageResource(muted ? R.drawable.ic_microphone_off : R.drawable.ic_microphone);
         mute.setContentDescription(muted ? getString(R.string.unmute_microphone) : getString(R.string.mute_microphone));
         mute.setSelected(muted);
+        meter.setMuted(muted);
         mute.setBackground(circleBackground(muted ? Color.rgb(185, 28, 28) : Color.argb(220, 17, 24, 39)));
     }
     private boolean permissions() {
@@ -324,6 +361,7 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
                     return;
                 }
                 camera.startPreview(facing, videoWidth(), videoHeight(), 30, 0);
+                phoneStabilization.attach(camera, stabilization.getSelectedItemPosition());
             }
             if (muted) camera.disableAudio();
             if (!active) message(getString(R.string.ready));
@@ -373,6 +411,13 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
             if (!camera.prepareAudio(128000, 48000, true)) {
                 fail(getString(R.string.unsupported_audio)); return;
             }
+            final int audioSession = generation;
+            camera.setCustomAudioEffect(new com.pedro.encoder.input.audio.CustomAudioEffect() {
+                @Override public byte[] process(byte[] pcm) {
+                    if (audioSession == generation) meter.sample(pcm);
+                    return pcm; // Observe only: the encoder receives the identical samples.
+                }
+            });
             audioRouter.attach(camera);
             camera.getStreamClient().setLatency(latencyMs());
             camera.getStreamClient().setSocketTimeout(5000);
@@ -398,11 +443,10 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         recoveryHandler.postDelayed(retry, delay);
     }
     private void controls() {
-        transmit.setText(active ? getString(R.string.stop_stream) : getString(R.string.start_stream));
-        transmit.setTextColor(Color.WHITE);
-        transmit.setBackgroundTintList(ColorStateList.valueOf(active ? Color.rgb(185, 28, 28) : Color.rgb(21, 128, 61)));
+        transmit.setStreaming(active);
         host.setEnabled(!active); port.setEnabled(!active);
         resolution.setEnabled(!active); latency.setEnabled(!active);
+        stabilization.setEnabled(!active);
     }
     private void stop() {
         active = false;
@@ -420,6 +464,8 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
     }
     private void closeCamera() {
         ++generation;
+        meter.reset();
+        phoneStabilization.detach();
         if (audioRouter != null) audioRouter.detach();
         SrtCamera2 previous = camera;
         camera = null;
@@ -451,8 +497,8 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
             liveDot.setVisibility(View.INVISIBLE);
         }
     }
-    @Override protected void onResume() { super.onResume(); resumed = true; audioRouter.resume(); preview(); }
-    @Override protected void onPause() { resumed = false; audioRouter.pause(); release(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); resumed = true; audioRouter.resume(); sidebarPanel.resume(); preview(); }
+    @Override protected void onPause() { resumed = false; sidebarPanel.pause(); audioRouter.pause(); release(); super.onPause(); }
     @Override public void surfaceCreated(SurfaceHolder holder) { surfaceReady = true; preview(); }
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) { }
     @Override public void surfaceDestroyed(SurfaceHolder holder) { surfaceReady = false; release(); }
