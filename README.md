@@ -6,9 +6,9 @@
 
 Created by **Efren C.D.** for Villavision, the school television project at Villaverde.
 
-VillaCam turns an Android phone into a wireless camera for OBS Studio. **SRT is the default**; an optional mode embeds the official **VDO.Ninja / WebRTC** publisher.
+VillaCam turns an Android phone into a wireless camera for OBS Studio. VillaCam restores the last selected streaming mode; Choose **SRT** or **WebRTC**. VDO.Ninja WHIP is a provider within WebRTC.
 
-Current version: **0.18.0**. The native interface automatically uses **Spanish when the primary device language is Spanish**, and **English for every other language**. Regional Spanish variants are supported; a secondary Spanish language does not override an unsupported primary language. An explicit Android 13+ per-app locale override follows the same rule. Project documentation is English. The embedded VDO.Ninja website manages its own language independently. This is an experimental project: test the phones, accessories and network you will use for an event.
+Current version: **0.32.0**. The native interface automatically uses **Spanish when the primary device language is Spanish**, and **English for every other language**. Regional Spanish variants are supported; a secondary Spanish language does not override an unsupported primary language. An explicit Android 13+ per-app locale override follows the same rule. Project documentation is English. This is an experimental project: test the phones, accessories and network you will use for an event.
 
 Download test builds from [GitHub Releases](https://github.com/efrencd/VillaCam/releases). Preview APKs use development signing; a future release signing key may require reinstalling the app, which clears its local settings.
 
@@ -26,9 +26,28 @@ Download test builds from [GitHub Releases](https://github.com/efrencd/VillaCam/
 - Connection status over the upper-left preview, with a blinking green SRT live indicator.
 - Vertical SRT microphone peak meter over the right edge of the preview (dBFS, colored bands and peak hold).
 - Configurable receive-only web panel that stays loaded across tabs, with independent web audio muting where supported.
-- Embedded VDO.Ninja mode with a private camera ID and an OBS receiving link.
+- Native publishing to VDO.Ninja with WHIP.
 
 Preview controls are not transmitted. No local video files are recorded. Leaving the publishing screen or turning off the screen stops capture and recovery. Background publishing is not supported.
+
+## Local WebRTC trial (Windows OBS)
+
+1. Connect the Android phone and the OBS computer to the same LAN.
+2. In VillaCam select **WebRTC**, choose **Local network**, enter a unique camera name such as `villacam-01`, then tap the circular start button. VillaCam remembers the name and prefers the phone’s Wi-Fi IPv4 address, ignoring VPN networks.
+3. Add a **Browser Source** in OBS and paste the displayed URL, for example `http://villacam-1234abcd.local:8080/`. Use the displayed IP URL if Windows or your network cannot resolve mDNS.
+4. Keep VillaCam on the camera screen. The trial supports one viewer per phone. If OBS blocks autoplay with sound, video starts muted. Open **Interact** on the source and click **Enable sound**.
+
+The Android phone hosts the receiver page and signaling on the LAN. Audio and video travel directly over WebRTC, with no external service. The trial has no access key. Use it on a trusted network. VillaCam rebuilds the LAN listener and republishes mDNS when the network or address changes. Keep the OBS browser source loaded with the .local URL so it can reconnect. The new LAN must be reachable from the receiver, and the receiver must resolve the name to the new address. A numeric URL must be updated manually after an IP change. Native WebRTC uses the main preview and sidebar, supports the 720p and 1080p capture profiles, camera switching and muting, and allows requesting the default, built-in or USB microphone before or during streaming. Android decides the active route. WebRTC meters microphone capture and shows measured outgoing video bitrate once connected. Video bitrate is adaptive by default. The optional 2, 4, 6 or 8 Mb/s setting caps video bitrate while preserving congestion control. Native SRT retains its stabilization and microphone routing controls.
+
+## WebRTC over the Internet
+
+Under **WebRTC → Over the Internet**, select **VDO.Ninja (WHIP)** for native camera publishing through the documented VDO.Ninja ingest endpoint. Use a unique camera name. Start publishing and open the exact link shown in an OBS Browser Source, for example `https://vdo.ninja/?whip=villacam-example`. Keep the source open while connecting. The app discovers STUN and TURN through the service’s WHIP response. Public service availability and mobile network compatibility should be tested before production use.
+
+Select **Custom signaling server** to use the VillaCam Worker described below.
+
+Choose **WebRTC → Connection → Over the Internet**, enter the HTTPS origin of your signaling deployment and a camera name, then tap the start button. Copy the camera link shown by VillaCam into an OBS Browser Source. Keep that source open through network changes. The OBS link uses only the camera name, such as `/?view=villacam2`. Anyone with that name can watch. Choose a distinct name for each camera. Remote sessions support one OBS viewer.
+
+The Worker and deployment steps are in [signaling/README.md](signaling/README.md). The free STUN service is used by default. TURN fallback requires optional server credentials. VillaCam reports direct or TURN based on the selected ICE route when statistics are available.
 
 ## Native stabilization (SRT)
 
@@ -38,19 +57,19 @@ The status below the selector reports capture metadata, rather than treating an 
 
 ## Sidebar and director panel
 
-The three icon tabs open **Options** (gear), **Web panel** (globe) and **About** (information). Long-press a tab for its label. The SRT shutter button stays over the bottom-center preview, outside the transmitted image. The right panel spans the preview height. In VDO.Ninja mode, Options contains the open/close publisher button; actual WebRTC transmission still uses the website controls.
+The three icon tabs open **Options** (gear), **Web panel** (globe) and **About** (information). Long-press a tab for its label. The SRT shutter button stays over the bottom-center preview, outside the transmitted image. The right panel spans the preview height.
 
 In Options, enter the full panel URL and tap **Save and open panel**. Both HTTPS and HTTP are accepted, including local LAN dashboards. HTTPS is normally required for receiving WebRTC audio; plain HTTP can be useful for a local text chat. Navigation stays on the configured origin. Reload and close controls live in Options and affect only this panel, not SRT capture. The loaded page uses the full web tab without a permanent toolbar or status banner. A URL is saved locally; do not put passwords or secrets into it.
 
 The panel cannot access the camera or microphone. Web audio is **off by default** when Android System WebView supports independent muting; enable it in Options for director-to-phone audio. A tap inside the page may be required to start playback. Older WebViews without native audio-muting support show a disabled switch and a notice: use Android volume or update System WebView. Headphones are **optional**, and unplugging them never closes the page. **Android selects the playback output**; VillaCam does not force a separate headphone route or change the streaming microphone to route web audio. Select/check the output in the phone settings. With audio enabled, unplugging headphones may move playback to the speaker.
 
-Tabs retain the live web session while the activity stays foregrounded. Leaving the screen closes the panel and capture; the configured URL remains saved. Switching between SRT and the separate VDO.Ninja screen also recreates the panel session.
+Tabs retain the live web session while the activity stays foregrounded. Leaving the screen closes the panel and capture; the configured URL remains saved.
 
-The native microphone meter reads the existing SRT PCM16 capture without modifying samples or opening another recorder. It starts while SRT captures audio, shows mute explicitly and clears on stop/reconnect. The slim, transparent meter uses a peak **dBFS** scale without numeric labels; it is not a calibrated loudness measurement. Native metering is unavailable for VDO.Ninja, whose capture belongs to its own web client. Preview overlays are never encoded into SRT.
+The native microphone meter reads the existing SRT PCM16 capture without modifying samples or opening another recorder. It starts while SRT captures audio, shows mute explicitly and clears on stop/reconnect. The slim, transparent meter uses a peak **dBFS** scale without numeric labels; it is not a calibrated loudness measurement. WebRTC also meters native microphone capture. Preview overlays are never encoded into SRT.
 
 ## Requirements
 
-Android **6.0 / API 23 or later**, compatible camera/audio codecs, and OBS Studio on the receiving computer. Hosted VDO.Ninja mode also requires internet and a compatible, up-to-date Android System WebView/Chrome installation.
+Android **6.0 / API 23 or later**, compatible camera/audio codecs, and OBS Studio on the receiving computer. VDO.Ninja WHIP requires Internet access.
 
 ## Receive SRT in OBS
 
@@ -74,19 +93,6 @@ VillaCam uses **milliseconds**, while OBS URL latency uses **microseconds**: 60 
 A LAN address is not reachable directly from another network. Remote SRT needs a suitable VPN, public receiver/port forwarding or relay, configured separately. The app currently has **no SRT passphrase/authentication controls**; do not assume its SRT traffic is encrypted.
 
 See the [official OBS SRT guide](https://obsproject.com/kb/srt-protocol-streaming-guide).
-
-## Receive VDO.Ninja in OBS
-
-1. Choose **VDO.Ninja · WebRTC** under **Streaming mode**. SRT is stopped first.
-2. Keep the randomly generated camera ID or enter 8–64 letters, digits, underscores or hyphens. Use a different private ID per camera.
-3. Optionally enter a password; the app does not persist it.
-4. Tap **Copy OBS link** and transfer the full link to the computer.
-5. In OBS, add a **Browser Source**, not a Media Source, and paste the URL. Set its canvas size, for example 1920 × 1080.
-6. Tap **OPEN PUBLISHER** in the app, then use VDO.Ninja's controls to share the camera and start streaming.
-
-**CLOSE PUBLISHER** closes the web publisher. **BACK TO SRT** returns to the native mode. In Spanish these buttons are **CERRAR EMISOR** and **VOLVER A SRT**. SRT is the default whenever the main screen starts; VDO.Ninja is not saved as the startup mode.
-
-The official `https://vdo.ninja` client and Android WebView manage this mode's capture devices, quality, connectivity and recovery. Native SRT settings do not control it. Both modes cannot publish simultaneously. A loaded page does not confirm that OBS is receiving media. Leaving the app closes the publisher; reopen it manually after returning.
 
 This is an independent integration, not an official VDO.Ninja app. Hosted-service access is subject to [VDO.Ninja's terms](https://docs.vdo.ninja/help/privacy-and-security-details/vdo.ninja-terms-of-service), which currently specify users aged **16 or older**. Signaling/STUN and relays may be involved. Keep stream IDs, passwords and full receiving links private. VillaCam's source license does not grant rights to third-party services.
 
@@ -154,7 +160,7 @@ Android checks: `gradlew.bat assembleDebug lintDebug` on Windows or `sh ./gradle
 
 Localization was checked in an API 36 emulator: English, Spanish (Spain/Mexico), and French with Spanish secondary (English fallback). Both native publishing screens were verified. The 79 localized keys have matching format arguments. Device-provided names and the embedded website are not translated by the native resources.
 
-SRT has been exercised on an Android phone during development. VDO.Ninja was checked in an API 36 emulator for page loading, virtual-camera access and return to SRT without camera conflicts. USB routing, WebRTC reception in OBS and accessory/network combinations need further real-device verification.
+SRT has been exercised on an Android phone during development. USB routing, WebRTC reception in OBS and accessory/network combinations need further real-device verification.
 
 Before an event, check audio and picture in OBS, network/receiver recovery, cancellation while offline, microphone switching and unplug/replug behavior, plus sustained multi-camera operation, temperature, battery and synchronization.
 

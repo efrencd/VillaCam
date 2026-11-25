@@ -20,3 +20,8 @@ signing.properties
 *.key
 .DS_Store
 Thumbs.db
+
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*

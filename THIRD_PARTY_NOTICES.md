@@ -49,6 +49,13 @@ The table below records the resolved debug runtime modules for VillaCam 0.14.0. 
 | org.jetbrains:annotations:23.0.0 | [Apache-2.0](LICENSE) |
 | org.slf4j:slf4j-api:2.0.18 | [MIT](third_party/licenses/SLF4J.txt) |
 
+## Local WebRTC trial dependencies
+
+- [WebRTC Android SDK 150.7871.01](https://github.com/webrtc-sdk/android), a prebuilt distribution of WebRTC (BSD-3-Clause). See upstream third-party notices for bundled native components.
+
+- [JmDNS 3.6.4](https://github.com/jmdns/jmdns), Apache-2.0, provides the local mDNS hostname and service announcement.
+- [NanoHTTPD 2.3.1](https://github.com/NanoHttpd/nanohttpd), BSD-3-Clause, serves the local viewer page and signaling endpoints.
+
 ## External services and tools
 
 **VDO.Ninja** is loaded from its official HTTPS site inside a WebView. Its website/client code is not copied into this repository. Hosted signaling, STUN and relay access is governed by the service's own [terms](https://docs.vdo.ninja/help/privacy-and-security-details/vdo.ninja-terms-of-service) and [privacy information](https://docs.vdo.ninja/help/privacy-and-security-details), not VillaCam's license. The service currently specifies users aged 16 or older. This integration does not imply endorsement.
@@ -63,3 +70,5 @@ The settings tab glyph follows the Material Design settings icon (Google, Apache
 
 The VillaCam launcher artwork was generated with the built-in ImageGen tool. Original artwork and prompt provenance are retained in [assets/branding/README.md](assets/branding/README.md). No third-party school logo was used as an input reference. The repository does not claim that generated artwork is exclusive or that third-party trademarks are licensed by Apache-2.0.
 
+
+VillaCam uses [OkHttp 4.12.0](https://github.com/square/okhttp) and its Okio dependency (Apache-2.0) for HTTPS and WebSocket signaling.

@@ -29,6 +29,19 @@ import java.net.URI;
 /** Foreground-only camera: leaving the screen always releases camera and microphone. */
 public class MainActivity extends LocalizedActivity implements SurfaceHolder.Callback {
     private SrtCamera2 camera;
+    private LocalRtc localRtc;
+    private static final String STREAM_MODE = "streamingModeV2";
+    private boolean localMode;
+    private Spinner mode;
+    private EditText localName;
+    private TextView localAddress, localRate, localLimitStatus;
+    private Spinner localLimit, localMic;
+    private TextView localMicStatus;
+    private static final int[] LOCAL_VIDEO_LIMITS = {0, 2000000, 4000000, 6000000, 8000000};
+    private LinearLayout localOptions, lanFields, internetFields;
+    private Spinner webRtcConnection, webRtcProvider;
+    private EditText signalingOrigin, remoteName;
+    private final java.util.List<View> srtOptions = new java.util.ArrayList<>();
     private SidebarPanel sidebarPanel;
     private MicrophoneMeter meter;
     private EditText host, port;
@@ -130,28 +143,38 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         FrameLayout.LayoutParams meterPosition = new FrameLayout.LayoutParams(dp(14), dp(180), Gravity.RIGHT | Gravity.CENTER_VERTICAL);
         meterPosition.rightMargin = dp(8);
         videoArea.addView(meter, meterPosition);
+        localRate = new TextView(this);
+        localRate.setTextColor(Color.WHITE);
+        localRate.setPadding(dp(10), dp(6), dp(10), dp(6));
+        GradientDrawable rateBackground = new GradientDrawable();
+        rateBackground.setColor(0x99111827);
+        rateBackground.setCornerRadius(dp(8));
+        localRate.setBackground(rateBackground);
+        FrameLayout.LayoutParams ratePosition = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.RIGHT);
+        ratePosition.setMargins(0, dp(12), dp(12), 0);
+        videoArea.addView(localRate, ratePosition);
+        localRate.setVisibility(View.GONE);
         ScrollView scroll = new ScrollView(this);
         LinearLayout panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
         panel.setPadding(0, dp(8), 0, dp(8));
         scroll.addView(panel);
         sidebar.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        Spinner mode = selector(panel, getString(R.string.streaming_mode), new String[]{getString(R.string.srt_default), getString(R.string.vdo_mode)}, 0);
-        mode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
-            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
-                if (position == 1) {
-                    mode.setSelection(0); // SRT remains the startup/return mode; never persist WebRTC mode.
-                    release();
-                    startActivity(new Intent(MainActivity.this, VdoActivity.class));
-                }
-            }
-            public void onNothingSelected(AdapterView<?> parent) { }
-        });
+        int previousMode = getPreferences(0).getInt("streamingMode", 0);
+        int migratedMode = previousMode == 1 ? 2 : previousMode == 2 ? 1 : 0;
+        int storedMode = getPreferences(0).getInt(STREAM_MODE, migratedMode);
+        int initialMode = storedMode == 0 ? 0 : 1;
+        if (storedMode == 2) getPreferences(0).edit().putInt("webrtcConnection", 1).putInt("remoteProvider", 0).apply();
+        mode = selector(panel, getString(R.string.streaming_mode),
+            new String[]{getString(R.string.srt_mode), getString(R.string.webrtc_mode)}, initialMode);
+        int srtStart = panel.getChildCount();
         host = field(panel, getString(R.string.receiver_host), "host", "192.168.1.100");
         port = field(panel, getString(R.string.udp_port), "port", "9000");
         port.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        for (int i = srtStart; i < panel.getChildCount(); i++) srtOptions.add(panel.getChildAt(i));
         resolution = selector(panel, getString(R.string.resolution), new String[]{getString(R.string.resolution_720), getString(R.string.resolution_1080)},
             getPreferences(0).getInt("resolution", 0));
+        srtStart = panel.getChildCount();
         stabilization = selector(panel, getString(R.string.stabilization_label),
             new String[]{getString(R.string.stabilization_off), getString(R.string.stabilization_eis), getString(R.string.stabilization_ois)},
             getPreferences(0).getInt("stabilization", 0));
@@ -187,7 +210,80 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
             }
             public void onNothingSelected(AdapterView<?> parent) { }
         });
+        for (int i = srtStart; i < panel.getChildCount(); i++) srtOptions.add(panel.getChildAt(i));
+        localOptions = new LinearLayout(this);
+        localOptions.setOrientation(LinearLayout.VERTICAL);
+        panel.addView(localOptions);
+        String fallback = getSharedPreferences("LocalRtcActivity", 0).getString("cameraName",
+            "villacam-" + java.util.UUID.randomUUID().toString().substring(0, 8));
+        webRtcConnection = selector(localOptions, getString(R.string.webrtc_connection),
+            new String[]{getString(R.string.webrtc_lan), getString(R.string.webrtc_internet)},
+            getPreferences(0).getInt("webrtcConnection", 0));
+        lanFields = new LinearLayout(this);
+        lanFields.setOrientation(LinearLayout.VERTICAL);
+        localOptions.addView(lanFields);
+        internetFields = new LinearLayout(this);
+        internetFields.setOrientation(LinearLayout.VERTICAL);
+        localOptions.addView(internetFields);
+        internetFields.setVisibility(View.GONE);
+        webRtcProvider = selector(internetFields, getString(R.string.remote_provider),
+            new String[]{getString(R.string.remote_provider_ninja), getString(R.string.remote_provider_custom)},
+            getPreferences(0).getInt("remoteProvider", 0));
+        webRtcProvider.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                getPreferences(0).edit().putInt("remoteProvider", position).apply();
+                updateWebRtcConnection();
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        signalingOrigin = field(internetFields, getString(R.string.remote_server), "remoteServer", "");
+        signalingOrigin.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        remoteName = field(internetFields, getString(R.string.remote_camera_name), "remoteCameraName", fallback);
+        remoteName.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        localName = field(lanFields, getString(R.string.local_name), "localName", fallback);
+        localName.setInputType(android.text.InputType.TYPE_CLASS_TEXT | android.text.InputType.TYPE_TEXT_VARIATION_URI);
+        localAddress = new TextView(this);
+        localAddress.setTextIsSelectable(true);
+        localOptions.addView(localAddress);
+        TextView nameHelp = new TextView(this);
+        nameHelp.setText(R.string.local_name_help);
+        nameHelp.setTextSize(12);
+        lanFields.addView(nameHelp);
+        updateWebRtcConnection();
+        webRtcConnection.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                getPreferences(0).edit().putInt("webrtcConnection", position).apply();
+                updateWebRtcConnection();
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        String[] limits = new String[LOCAL_VIDEO_LIMITS.length];
+        limits[0] = getString(R.string.audio_automatic);
+        for (int i = 1; i < limits.length; i++)
+            limits[i] = getString(R.string.local_video_limit_value, LOCAL_VIDEO_LIMITS[i] / 1000000);
+        localLimit = selector(localOptions, getString(R.string.local_video_limit), limits,
+            getPreferences(0).getInt("localVideoLimit", 0));
+        localLimitStatus = new TextView(this);
+        localOptions.addView(localLimitStatus);
+        localMic = selector(localOptions, getString(R.string.audio_input_label),
+            new String[]{getString(R.string.audio_auto_android), getString(R.string.audio_internal_mic), getString(R.string.audio_usb_mic)},
+            getPreferences(0).getInt("localAudioInput", 0));
+        localMicStatus = new TextView(this);
+        localOptions.addView(localMicStatus);
+        TextView localHelp = new TextView(this);
+        localHelp.setText(R.string.local_native_help);
+        localOptions.addView(localHelp);
+        localOptions.setVisibility(View.GONE);
+        localRtc = new LocalRtc(this, videoArea, meter);
+        localMic.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                getPreferences(0).edit().putInt("localAudioInput", position).apply();
+                localRtc.selectAudioInput(position);
+            }
+            @Override public void onNothingSelected(AdapterView<?> parent) {}
+        });
         iconButton(videoControls, R.drawable.ic_switch_camera, getString(R.string.switch_camera), v -> {
+            if (localMode) { localRtc.switchCamera(); return; }
             if (camera != null && camera.isOnPreview()) {
                 try { camera.switchCamera(); facing = camera.getCameraFacing();
                     phoneStabilization.attach(camera, stabilization.getSelectedItemPosition()); }
@@ -196,6 +292,7 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         });
         mute = iconButton(videoControls, R.drawable.ic_microphone, getString(R.string.mute_microphone), v -> {
             muted = !muted;
+            if (localMode) localRtc.mute(muted);
             if (camera != null) { if (muted) camera.disableAudio(); else camera.enableAudio(); }
             updateMicrophoneIcon();
         });
@@ -203,6 +300,7 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         receiverHelp = new TextView(this);
         sidebarPanel = new SidebarPanel(this, sidebar, scroll, panel);
         panel.addView(receiverHelp);
+        srtOptions.add(receiverHelp);
         updateReceiverHelp();
         setContentView(root);
         preview.getHolder().addCallback(this);
@@ -211,7 +309,9 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         resolution.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 getPreferences(0).edit().putInt("resolution", position).apply();
-                if (!active) { release(); preview(); }
+                if (localMode) {
+                    if (resumed && permissions() && !localRtc.running()) openLocalCamera();
+                } else if (!active) { release(); preview(); }
             }
             public void onNothingSelected(AdapterView<?> parent) { }
         });
@@ -222,7 +322,30 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
             }
             public void onNothingSelected(AdapterView<?> parent) { }
         });
-        if (!permissions()) requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, 1);
+        mode.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
+                getPreferences(0).edit().putInt(STREAM_MODE, position).apply();
+                if ((position == 1) != localMode) {
+                    if (position == 1) {
+                        release();
+                        localMode = true;
+                        previewView.setVisibility(View.GONE);
+                        if (resumed && permissions()) openLocalCamera();
+                    } else {
+                        localRtc.closeCamera();
+                        localMode = false;
+                        previewView.setVisibility(View.VISIBLE);
+                        preview();
+                    }
+                    for (View option : srtOptions) option.setVisibility(localMode ? View.GONE : View.VISIBLE);
+                    localOptions.setVisibility(localMode ? View.VISIBLE : View.GONE);
+                    controls();
+                }
+            }
+            public void onNothingSelected(AdapterView<?> parent) {}
+        });
+        if (!permissions())
+            requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, 1);
     }
 
     private OpenGlView previewView;
@@ -325,6 +448,7 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
             && checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
     }
     private void preview() {
+        if (localMode || mode.getSelectedItemPosition() != 0) return;
         if (!resumed || !surfaceReady || !permissions()) return;
         if (camera == null) {
             final int session = ++generation;
@@ -367,7 +491,88 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
             if (!active) message(getString(R.string.ready));
         } catch (Exception e) { message(getString(R.string.camera_permission_error)); }
     }
+    private void openLocalCamera() {
+        localRtc.selectAudioInput(localMic.getSelectedItemPosition());
+        localRtc.openCamera(videoWidth(), videoHeight());
+        localRtc.mute(muted);
+        if (localRtc.hasCamera()) localStatus(R.string.ready, false);
+    }
+
+    void localStatus(int text, boolean live) {
+        localLive = live;
+        message(getString(text));
+    }
+
+    void localVideoBitrate(double mbps) {
+        localRate.setVisibility(localMode && mbps >= 0 ? View.VISIBLE : View.GONE);
+        if (mbps >= 0) localRate.setText(getString(R.string.local_video_rate, mbps));
+    }
+    void localBitrateLimitRejected() { localLimitStatus.setText(R.string.local_video_limit_rejected); }
+
+    void localAudioStatus(String text) { localMicStatus.setText(text); }
+    void localLinks(String address) { localAddress.setText(address); }
+    void localControls() { controls(); }
+    private boolean localLive;
+
+    private void updateWebRtcConnection() {
+        boolean internet = webRtcConnection.getSelectedItemPosition() == 1;
+        lanFields.setVisibility(internet ? View.GONE : View.VISIBLE);
+        internetFields.setVisibility(internet ? View.VISIBLE : View.GONE);
+        signalingOrigin.setVisibility(webRtcProvider.getSelectedItemPosition() == 1 ? View.VISIBLE : View.GONE);
+    }
+
+    private void toggleLocal() {
+        if (!permissions()) {
+            requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, 1);
+            return;
+        }
+        if (localRtc.running()) {
+            localRtc.stop();
+            localStatus(R.string.ready, false);
+        } else if (webRtcConnection.getSelectedItemPosition() == 1) {
+            boolean ninja = webRtcProvider.getSelectedItemPosition() == 0;
+            String origin = ninja ? null : RemoteRtc.httpsOrigin(signalingOrigin.getText().toString());
+            if (!ninja && origin == null) {
+                signalingOrigin.setError(getString(R.string.remote_invalid_server));
+                return;
+            }
+            String name = remoteName.getText().toString().trim().toLowerCase(java.util.Locale.ROOT);
+            if (!name.matches("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")) {
+                remoteName.setError(getString(R.string.local_name_error));
+                return;
+            }
+            String cameraId = getPreferences(0).getString("remoteCameraId", "");
+            if (cameraId.isEmpty()) cameraId = java.util.UUID.randomUUID().toString();
+            remoteName.setText(name);
+            if (!localRtc.hasCamera()) openLocalCamera();
+            int limit = localLimit.getSelectedItemPosition();
+            var settings = getPreferences(0).edit().putInt("localVideoLimit", limit)
+                .putString("remoteCameraName", name).putString("remoteCameraId", cameraId);
+            if (!ninja) settings.putString("remoteServer", origin);
+            settings.apply();
+            localLimitStatus.setText("");
+            if (ninja) localRtc.startWhip(name, LOCAL_VIDEO_LIMITS[limit]);
+            else localRtc.startRemote(origin, name, cameraId, LOCAL_VIDEO_LIMITS[limit]);
+        } else {
+            String name = localName.getText().toString().trim().toLowerCase(java.util.Locale.ROOT)
+                .replaceFirst("[.]local[.]?$", "");
+            if (!name.matches("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")) {
+                localName.setError(getString(R.string.local_name_error));
+                return;
+            }
+            getPreferences(0).edit().putString("localName", name).apply();
+            localName.setText(name + ".local");
+            if (!localRtc.hasCamera()) openLocalCamera();
+            int limit = localLimit.getSelectedItemPosition();
+            getPreferences(0).edit().putInt("localVideoLimit", limit).apply();
+            localLimitStatus.setText("");
+            localRtc.start(name, LOCAL_VIDEO_LIMITS[limit]);
+        }
+        controls();
+    }
+
     private void toggle() {
+        if (localMode) { toggleLocal(); return; }
         if (active) { release(); preview(); message(getString(R.string.stream_stopped)); return; }
         if (!permissions()) {
             requestPermissions(new String[]{Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO}, 1);
@@ -443,9 +648,17 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         recoveryHandler.postDelayed(retry, delay);
     }
     private void controls() {
-        transmit.setStreaming(active);
+        boolean busy = active || localRtc.running();
+        transmit.setStreaming(busy);
+        localName.setEnabled(!busy);
+        localLimit.setEnabled(!busy);
+        webRtcConnection.setEnabled(!busy);
+        webRtcProvider.setEnabled(!busy);
+        signalingOrigin.setEnabled(!busy);
+        remoteName.setEnabled(!busy);
+        mode.setEnabled(!busy);
         host.setEnabled(!active); port.setEnabled(!active);
-        resolution.setEnabled(!active); latency.setEnabled(!active);
+        resolution.setEnabled(!busy); latency.setEnabled(!active);
         stabilization.setEnabled(!active);
     }
     private void stop() {
@@ -481,7 +694,7 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
         updateLiveIndicator();
     }
     private void updateLiveIndicator() {
-        boolean live = active && resumed && recovery.isLive();
+        boolean live = resumed && (localMode ? localLive : active && recovery.isLive());
         if (live) {
             liveDot.setVisibility(View.VISIBLE);
             // Bitrate updates must not restart the blink on every status refresh.
@@ -497,13 +710,14 @@ public class MainActivity extends LocalizedActivity implements SurfaceHolder.Cal
             liveDot.setVisibility(View.INVISIBLE);
         }
     }
-    @Override protected void onResume() { super.onResume(); resumed = true; audioRouter.resume(); sidebarPanel.resume(); preview(); }
-    @Override protected void onPause() { resumed = false; sidebarPanel.pause(); audioRouter.pause(); release(); super.onPause(); }
+    @Override protected void onResume() { super.onResume(); resumed = true; audioRouter.resume(); sidebarPanel.resume(); if (localMode && permissions()) openLocalCamera(); else preview(); }
+    @Override protected void onPause() { resumed = false; sidebarPanel.pause(); audioRouter.pause(); localRtc.closeCamera(); release(); super.onPause(); }
+    @Override protected void onDestroy() { localRtc.destroy(); super.onDestroy(); }
     @Override public void surfaceCreated(SurfaceHolder holder) { surfaceReady = true; preview(); }
     @Override public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) { }
-    @Override public void surfaceDestroyed(SurfaceHolder holder) { surfaceReady = false; release(); }
+    @Override public void surfaceDestroyed(SurfaceHolder holder) { surfaceReady = false; if (!localMode) release(); }
     @Override public void onRequestPermissionsResult(int request, String[] names, int[] results) {
         super.onRequestPermissionsResult(request, names, results);
-        if (permissions()) preview(); else message(getString(R.string.capture_permissions_required));
+        if (permissions()) { if (localMode && resumed) openLocalCamera(); else preview(); } else message(getString(R.string.capture_permissions_required));
     }
 }
